@@ -2,4 +2,7 @@
 *.ko
 *.cmd
 *.d
+*.mod.c
+Module.symvers
+modules.order
 .tmp_versions

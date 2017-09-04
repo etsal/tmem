@@ -1,6 +1,8 @@
+FLAGS = -g -DDEBUG
+
 #If the environment variable is set, no extra info is required
 ifneq ($(KERNELRELEASE),)
-	obj-m += tmem.o tmem_dev.o tmem_frontswap.o
+	obj-m += tmem_local.o tmem_dev.o tmem_frontswap.o
 	#If it isn't, use the shell to find the kernel version and the directory
 else
 	KERNELDIR ?= /lib/modules/$(shell uname -r)/build
@@ -8,7 +10,7 @@ else
 
 	#In any case, create the module
 default:
-	$(MAKE) -C $(KERNELDIR) M=$(PWD) modules
+	$(MAKE) EXTRA_FLAGS="$(FLAGS)" -C $(KERNELDIR) M=$(PWD) modules
 
 endif
 

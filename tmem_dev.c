@@ -11,8 +11,7 @@
 #include <linux/uaccess.h>
 #include <linux/slab.h>
 
-#include "tmem.h"
-
+#include <tmem/tmem_ops.h> 
 
 /* 
  * This can be removed, if we assign "namespaces" to each 
@@ -79,19 +78,19 @@ long tmem_chrdev_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 
 	switch (cmd) {
 	case TMEM_GET:
-		pr_debug("got into get\n");
-		if (tmem_get_page(page, tmem_key, &len) < 0) {
+		pr_debug("got into get");
+
+		if (tmem_get(page, tmem_key, &len) < 0) {
 			pr_err("TMEM_GET command failed");
 			return -EINVAL;
 		}
-
 
 		if (copy_to_user(pair.value, (void *) page_address(page), len)) {
 			pr_err("copying to user failed");
 			return -EINVAL;
 		}
 
-		if (copy_to_user(pair.value_len, &len, sizeof(size_t))) {
+		if (copy_to_user((struct key_value *) arg, &pair, sizeof(struct key_value))) {
 			pr_err("copying to user failed");
 			return -EINVAL;
 		}
@@ -99,14 +98,15 @@ long tmem_chrdev_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		break;
 
 	case TMEM_PUT:
-		pr_debug("got into put\n");
+		pr_debug("got into put");
 
-		if (copy_from_user((void *) page_address(page), pair.value, *(pair.value_len))) {
+
+		if (copy_from_user((void *) page_address(page), pair.value, pair.value_len)) {
 			pr_debug("copying to user failed");
 			return -EINVAL;
 		}
 
-		if (tmem_put_page(page, tmem_key, *(pair.value_len)) < 0) {
+		if (tmem_put(page, tmem_key, pair.value_len) < 0) {
 			pr_debug("TMEM_PUT command failed");
 			return -EINVAL;
 		}
@@ -114,8 +114,8 @@ long tmem_chrdev_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		break;
 
 	case TMEM_INVAL:
-		pr_debug("Got into invalidate\n");
-		tmem_invalidate_page(tmem_key);
+		pr_debug("Got into invalidate");
+		tmem_invalidate(tmem_key);
 
 		break;
 

@@ -9,7 +9,7 @@
 #include <linux/string.h>
 #include <linux/mm.h>
 
-#include "tmem.h"
+#include <tmem/tmem_ops.h> 
 
 static u64 current_memory; 
 
@@ -27,14 +27,14 @@ DEFINE_HASHTABLE(used_pages, 10);
 #define TMEM_OBJ_ID (0) 
 #define TMEM_POOL_SIZE (64 * 1024 * 1024) 
 
-int tmem_put_page(struct page *page, struct tmem_key tmem_key, size_t len)
+int tmem_local_put_page(struct page *page, struct tmem_key tmem_key, size_t len)
 {
 	struct page_list *page_entry = NULL;
 	int already_exists = 0;
 	unsigned long flags;
-    void *key = tmem_key.key;
-    size_t key_len = tmem_key.key_len;
-    int ret = -1;
+	void *key = tmem_key.key;
+	size_t key_len = tmem_key.key_len;
+	int ret = -1;
 
 	pr_debug("entering put_page\n");
 
@@ -108,10 +108,9 @@ out_pool:
     
     return ret;
 }
-EXPORT_SYMBOL(tmem_put_page);
 
 
-int tmem_get_page(struct page *page, struct tmem_key tmem_key, size_t *len)
+int tmem_local_get_page(struct page *page, struct tmem_key tmem_key, size_t *len)
 {
 	struct page_list *page_entry;
 	unsigned long flags;
@@ -138,9 +137,8 @@ int tmem_get_page(struct page *page, struct tmem_key tmem_key, size_t *len)
 
 	return -EINVAL;
 }
-EXPORT_SYMBOL(tmem_get_page);
 
-void tmem_invalidate_page(struct tmem_key tmem_key)
+void tmem_local_invalidate_page(struct tmem_key tmem_key)
 {
 	struct page_list *page_entry;
 	unsigned long flags;
@@ -173,10 +171,9 @@ void tmem_invalidate_page(struct tmem_key tmem_key)
 	return;
 
 }
-EXPORT_SYMBOL(tmem_invalidate_page);
 
 
-void tmem_invalidate_area(void)
+void tmem_local_invalidate_area(void)
 {
 	struct page_list *page_entry;
 	unsigned long flags;
@@ -196,15 +193,22 @@ void tmem_invalidate_area(void)
 	spin_unlock_irqrestore(&used_lock, flags);
 	pr_debug("leaving invalidate_area\n");
 }
-EXPORT_SYMBOL(tmem_invalidate_area);
 
+struct tmem_ops tmem_naive_ops = {
+	.get = tmem_local_get_page,
+	.put = tmem_local_put_page,
+	.invalidate = tmem_local_invalidate_page,
+	.invalidate_all = tmem_local_invalidate_area,
+};
 
-static int __init tmem_init(void)
+static int __init tmem_local_init(void)
 {
 	struct dentry *root;
 
-    current_memory = 0;
+	current_memory = 0;
 	hash_init(used_pages);
+
+	register_tmem_ops(&tmem_naive_ops);	
 
 	root = debugfs_create_dir("tmem", NULL);
 	if (root == NULL) {
@@ -223,6 +227,6 @@ out:
 
 
 
-module_init(tmem_init);
+module_init(tmem_local_init);
 MODULE_AUTHOR("Aimilios Tsalapatis");
 MODULE_LICENSE("GPL");

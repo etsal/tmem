@@ -8,14 +8,13 @@
 #include <linux/hashtable.h>
 #include <linux/spinlock.h>
 
-#include "tmem.h"
-
+#include <tmem/tmem_ops.h>
 
 static int tmem_frontswap_store(unsigned int type, pgoff_t offset,
 				struct page *page)
 {
     DECLARE_TMEM_KEY(key, &offset, sizeof(pgoff_t));
-	return tmem_put_page(page, key, PAGE_SIZE);
+	return tmem_put(page, key, PAGE_SIZE);
 }
 
 static int tmem_frontswap_load(unsigned int type, pgoff_t offset,
@@ -24,13 +23,13 @@ static int tmem_frontswap_load(unsigned int type, pgoff_t offset,
     size_t ignored;
     DECLARE_TMEM_KEY(key, &offset, sizeof(pgoff_t));
 
-	return tmem_get_page(page, key, &ignored);
+	return tmem_get(page, key, &ignored);
 }
 
 static void tmem_frontswap_invalidate_page(unsigned int type, pgoff_t offset)
 {
     DECLARE_TMEM_KEY(key, &offset, sizeof(pgoff_t));
-	tmem_invalidate_page(key);
+	tmem_invalidate(key);
 }
 
 static void tmem_frontswap_invalidate_area(unsigned int type)

@@ -114,15 +114,15 @@ int tmem_local_get_page(struct page *page, struct tmem_key tmem_key, size_t *len
 {
 	struct page_list *page_entry;
 	unsigned long flags;
-    void *key = tmem_key.key;
-    size_t key_len = tmem_key.key_len;
+	void *key = tmem_key.key;
+	size_t key_len = tmem_key.key_len;
 
 	pr_debug("entering get_page\n");
 	spin_lock_irqsave(&used_lock, flags);
 	hash_for_each_possible(used_pages, page_entry, hash_node, *(long *) key) {
 		if (!memcmp(page_entry->tmem_key.key, key, min(tmem_key.key_len, key_len))) {
 
-            *len = page_entry->len;
+			*len = page_entry->len;
 			memcpy((void *) page_address(page), page_entry->value, min(*len, PAGE_SIZE));
 			spin_unlock_irqrestore(&used_lock, flags);
 
@@ -142,8 +142,8 @@ void tmem_local_invalidate_page(struct tmem_key tmem_key)
 {
 	struct page_list *page_entry;
 	unsigned long flags;
-    void *key = tmem_key.key;
-    size_t key_len = tmem_key.key_len;
+	void *key = tmem_key.key;
+	size_t key_len = tmem_key.key_len;
 
 	pr_debug("entering invalidate_page\n");
 
@@ -153,9 +153,9 @@ void tmem_local_invalidate_page(struct tmem_key tmem_key)
 			hash_del(&page_entry->hash_node);
 			spin_unlock_irqrestore(&used_lock, flags);
 
-            kfree(page_entry->value);
-            kfree(page_entry->tmem_key.key);
-            kfree(page_entry);
+			kfree(page_entry->value);
+			kfree(page_entry->tmem_key.key);
+			kfree(page_entry);
 
 
 			pr_debug("leaving invalidate_page\n");
@@ -185,9 +185,9 @@ void tmem_local_invalidate_area(void)
 	hash_for_each(used_pages, bkt, page_entry, hash_node) {
 		hash_del(&page_entry->hash_node);
 
-        kfree(page_entry->tmem_key.key);
-        kfree(page_entry->value);
-        kfree(page_entry);
+		kfree(page_entry->tmem_key.key);
+		kfree(page_entry->value);
+		kfree(page_entry);
 
 	}
 	spin_unlock_irqrestore(&used_lock, flags);
@@ -217,7 +217,7 @@ static int __init tmem_local_init(void)
 	}
 
 	if (!debugfs_create_u64("current_memory", S_IRUGO, root, &current_memory)) 
-        pr_err("debugfs entry could not be set up\n");
+		pr_err("debugfs entry could not be set up\n");
 
 out:
 

@@ -75,6 +75,7 @@ int tmem_local_put_page(struct page *page, struct tmem_key tmem_key, size_t len)
 	memcpy(page_entry->value, (void *) page_address(page), min(len, PAGE_SIZE));
     page_entry->len = len;
 
+
 	if(!already_exists){
 		spin_lock_irqsave(&used_lock, flags);
 		hash_add(used_pages, &page_entry->hash_node, *(long *)key);
@@ -133,7 +134,7 @@ int tmem_local_get_page(struct page *page, struct tmem_key tmem_key, size_t *len
 	}
 
 	spin_unlock_irqrestore(&used_lock, flags);
-	pr_warn("leaving get_page - failed\n");
+	/* pr_debug("leaving get_page - failed\n"); */
 
 	return -EINVAL;
 }

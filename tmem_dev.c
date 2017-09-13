@@ -81,7 +81,7 @@ long tmem_chrdev_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		pr_debug("got into get");
 
 		if (tmem_get(page, tmem_key, &len) < 0) {
-			pr_err("TMEM_GET command failed");
+			/* pr_err("TMEM_GET command failed"); */
 			return -EINVAL;
 		}
 

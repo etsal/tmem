@@ -19,19 +19,19 @@
 
 static u64 current_memory; 
 
-int tmem_dummy_put_page(struct page *page, struct tmem_key tmem_key, size_t len)
+int tmem_dummy_put_page(void *key, size_t key_len, void *value, size_t value_len)
 {
 	
 	return 0;
 }
 
-int tmem_dummy_get_page(struct page *page, struct tmem_key tmem_key, size_t *len)
+int tmem_dummy_get_page(void *key, size_t key_len, void *value, size_t *value_len)
 {
-	*len = 0;
+	*value_len= 0;
 	return 0;
 }
 
-void tmem_dummy_invalidate_page(struct tmem_key tmem_key)
+void tmem_dummy_invalidate_page(void *key, size_t key_len)
 {
 }
 

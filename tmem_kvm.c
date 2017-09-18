@@ -8,6 +8,7 @@
 #include <linux/spinlock.h>
 #include <linux/string.h>
 #include <linux/mm.h>
+#include <asm/page.h>
 
 #include <tmem/tmem_ops.h> 
 #include <uapi/linux/kvm_para.h>
@@ -19,53 +20,81 @@
 
 
 static u64 current_memory; 
+static struct tmem_request request;
 
-static struct page *control_page = NULL;
+struct page *page = NULL;
+size_t *value_len_ptr = NULL;
 
-void create_control_page(struct tmem_key tmem_key, struct page *page, size_t len)
-{
-	struct key_value key_value;
 
-	key_value.key = tmem_key.key;
-	key_value.key_len = tmem_key.key_len;
-	key_value.value = page_address(page);
-	key_value.value_len = len;
-
-	memcpy(page_address(control_page), &key_value, sizeof(key_value));
-	memcpy(page_address(control_page) + sizeof(key_value), key_value.key, key_value.key_len);
-	
-}
-
-int tmem_kvm_put_page(struct page *page, struct tmem_key tmem_key, size_t len)
-{
-	
-	create_control_page(tmem_key, page, len);
-	return kvm_hypercall3(KVM_HC_TMEM, PV_TMEM_PUT_OP, page_to_pfn(control_page), page_to_pfn(page));
-}
-
-int tmem_kvm_get_page(struct page *page, struct tmem_key tmem_key, size_t *len)
+int tmem_kvm_put_page(void *key, size_t key_len, void *value, size_t value_len)
 {
 	int ret;
 
-	create_control_page(tmem_key, page, *len);
-	ret = kvm_hypercall3(KVM_HC_TMEM, PV_TMEM_GET_OP, page_to_pfn(control_page), page_to_pfn(page));
-	*len = *((size_t *) page_to_virt(control_page));
+	struct tmem_put_request put_request = {
+		.key = (void *) virt_to_phys(key),
+		.key_len = key_len,
+		.value = (void *) virt_to_phys(value),
+		.value_len = value_len,
+	};
+	request.tmem_put_request = put_request;
+	
+	*((struct tmem_request *)(page_to_virt(page))) = request;
 
+
+	ret = kvm_hypercall2(KVM_HC_TMEM, PV_TMEM_PUT_OP, page_to_phys(page));
+	if (ret)
+		pr_err("Hypercall failed");
 	return ret;
 }
 
-void tmem_kvm_invalidate_page(struct tmem_key tmem_key)
+int tmem_kvm_get_page(void *key, size_t key_len, void *value, size_t *value_lenp)
 {
+	int ret;
+	struct tmem_request request;
 
-	create_control_page(tmem_key, NULL, 0);
-	kvm_hypercall3(KVM_HC_TMEM, PV_TMEM_INVALIDATE_OP, page_to_pfn(control_page), 0);
+	*value_len_ptr = *value_lenp;
 
+	struct tmem_get_request get_request = {
+		.key = (void *) virt_to_phys(key),
+		.key_len = key_len,
+		.value = (void *) virt_to_phys(value),
+		.value_lenp = (void *) virt_to_phys(value_len_ptr),
+	};
+	request.tmem_get_request = get_request;
+
+	*((struct tmem_request *)(page_to_virt(page))) = request;
+
+	ret = kvm_hypercall2(KVM_HC_TMEM, PV_TMEM_GET_OP, page_to_phys(page));
+	if (ret && ret != -EINVAL)
+		pr_err("Hypercall failed");
+
+	*value_lenp = *value_len_ptr;
+
+	return ret;
+
+}
+
+void tmem_kvm_invalidate_page(void *key, size_t key_len)
+{
+	int ret;
+	struct tmem_request request;
+
+
+	struct tmem_invalidate_request invalidate_request = {
+		.key = (void *) virt_to_phys(key),
+		.key_len = key_len,
+	};
+	request.tmem_invalidate_request = invalidate_request;
+
+	*((struct tmem_request *)(page_to_virt(page))) = request;
+
+	ret = kvm_hypercall2(KVM_HC_TMEM, PV_TMEM_INVALIDATE_OP, page_to_phys(page));
+	if (ret)
+		pr_err("Hypercall failed");
 }
 
 void tmem_kvm_invalidate_area(void) {
 
-//	create_control_page(tmem_key, *len);
-//	kvm_hypercall3(KVM_HC_TMEM, PV_TMEM_INVALIDATE_OP, page_to_pfn(*page), page_to_pfn(*control_page));
 
 }
 
@@ -80,12 +109,12 @@ static int __init tmem_kvm_init(void)
 {
 	struct dentry *root;
 
+	page = alloc_page(GFP_KERNEL);
+	value_len_ptr = kmalloc(sizeof(size_t), GFP_KERNEL);
+	if (!page || !value_len_ptr)
+		goto out_fail;
+
 	current_memory = 0;
-	control_page = alloc_page(GFP_KERNEL);
-	if (!control_page) {
-		pr_err("allocation of local buffer failed");
-		goto out;
-	}
 
 	register_tmem_ops(&tmem_kvm_ops);	
 
@@ -98,14 +127,19 @@ static int __init tmem_kvm_init(void)
 	if (!debugfs_create_u64("current_memory", S_IRUGO, root, &current_memory)) 
 		pr_err("debugfs entry could not be set up\n");
 
-	return 0;
-
 out:
-	if (control_page)
-		free_page((long) control_page);
 
 	return 0;
+
+out_fail:
+
+	if (page)
+		__free_page(page);
+
+	if (value_len_ptr)
+		kfree(value_len_ptr);
     
+	return -ENOMEM;
 }
 
 

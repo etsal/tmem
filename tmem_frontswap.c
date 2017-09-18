@@ -13,23 +13,24 @@
 static int tmem_frontswap_store(unsigned int type, pgoff_t offset,
 				struct page *page)
 {
-    DECLARE_TMEM_KEY(key, &offset, sizeof(pgoff_t));
-	return tmem_put(page, key, PAGE_SIZE);
+	void *value= (void *) page_address(page);
+
+	return tmem_put(&offset, sizeof(offset), value, PAGE_SIZE);
 }
 
 static int tmem_frontswap_load(unsigned int type, pgoff_t offset,
 				struct page *page)
 {
-    size_t ignored;
-    DECLARE_TMEM_KEY(key, &offset, sizeof(pgoff_t));
+	void *value= (void *) page_address(page);
+	/* In frontswap we already know the length of the value*/
+	size_t ignored;
 
-	return tmem_get(page, key, &ignored);
+	return tmem_get(&offset, sizeof(offset), value, &ignored);
 }
 
 static void tmem_frontswap_invalidate_page(unsigned int type, pgoff_t offset)
 {
-    DECLARE_TMEM_KEY(key, &offset, sizeof(pgoff_t));
-	tmem_invalidate(key);
+	tmem_invalidate(&offset, sizeof(offset));
 }
 
 static void tmem_frontswap_invalidate_area(unsigned int type)

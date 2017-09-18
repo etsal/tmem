@@ -15,9 +15,10 @@ static u64 current_memory;
 
 struct page_list {
 	struct hlist_node hash_node;
-	struct tmem_key tmem_key;
+	void *key;
+	size_t key_len;
 	void *value;
-    size_t len;
+	size_t value_len;
 };
 
 DEFINE_SPINLOCK(used_lock); 
@@ -27,13 +28,11 @@ DEFINE_HASHTABLE(used_pages, 10);
 #define TMEM_OBJ_ID (0) 
 #define TMEM_POOL_SIZE (64 * 1024 * 1024) 
 
-int tmem_local_put_page(struct page *page, struct tmem_key tmem_key, size_t len)
+int tmem_local_put_page(void *key, size_t key_len, void *value, size_t value_len)
 {
 	struct page_list *page_entry = NULL;
 	int already_exists = 0;
 	unsigned long flags;
-	void *key = tmem_key.key;
-	size_t key_len = tmem_key.key_len;
 	int ret = -1;
 
 	pr_debug("entering put_page\n");
@@ -43,7 +42,7 @@ int tmem_local_put_page(struct page *page, struct tmem_key tmem_key, size_t len)
 	spin_lock_irqsave(&used_lock, flags);
 	hash_for_each_possible(used_pages, page_entry, hash_node, *(long *) key) {
         /* TODO: Is this correct? The lengths seem weird */
-		if (!memcmp(page_entry->tmem_key.key, key, min(tmem_key.key_len, key_len))) { 
+		if (!memcmp(page_entry->key, key, min(page_entry->key_len, key_len))) { 
 			already_exists = 1;
 			break;
 		}
@@ -60,8 +59,8 @@ int tmem_local_put_page(struct page *page, struct tmem_key tmem_key, size_t len)
 		if (!page_entry)
 			goto out_mem;
         
-        page_entry->tmem_key.key = kmalloc(key_len, GFP_KERNEL);
-        if(!page_entry->tmem_key.key)
+        page_entry->key = kmalloc(key_len, GFP_KERNEL);
+        if(!page_entry->key)
             goto out_mem;
 
         page_entry->value = kmalloc(PAGE_SIZE, GFP_KERNEL);
@@ -70,10 +69,10 @@ int tmem_local_put_page(struct page *page, struct tmem_key tmem_key, size_t len)
 	
 	}
 
-	memcpy(page_entry->tmem_key.key, key, key_len);
-    page_entry->tmem_key.key_len = key_len;
-	memcpy(page_entry->value, (void *) page_address(page), min(len, PAGE_SIZE));
-    page_entry->len = len;
+	memcpy(page_entry->key, key, key_len);
+    page_entry->key_len = key_len;
+	memcpy(page_entry->value, value, min(value_len, PAGE_SIZE));
+    page_entry->value_len = value_len;
 
 
 	if(!already_exists){
@@ -93,8 +92,8 @@ out_mem:
     if (page_entry->value)
         kfree(page_entry->value);
 
-    if (page_entry->tmem_key.key)
-        kfree(page_entry->tmem_key.key);
+    if (page_entry->key)
+        kfree(page_entry->key);
 
     if (page_entry)
         kfree(page_entry);
@@ -111,20 +110,18 @@ out_pool:
 }
 
 
-int tmem_local_get_page(struct page *page, struct tmem_key tmem_key, size_t *len)
+int tmem_local_get_page(void *key, size_t key_len, void *value, size_t *value_len)
 {
 	struct page_list *page_entry;
 	unsigned long flags;
-	void *key = tmem_key.key;
-	size_t key_len = tmem_key.key_len;
 
 	pr_debug("entering get_page\n");
 	spin_lock_irqsave(&used_lock, flags);
 	hash_for_each_possible(used_pages, page_entry, hash_node, *(long *) key) {
-		if (!memcmp(page_entry->tmem_key.key, key, min(tmem_key.key_len, key_len))) {
+		if (!memcmp(page_entry->key, key, min(page_entry->key_len, key_len))) {
 
-			*len = page_entry->len;
-			memcpy((void *) page_address(page), page_entry->value, min(*len, PAGE_SIZE));
+			*value_len = page_entry->value_len;
+			memcpy(value, page_entry->value, min(*value_len, PAGE_SIZE));
 			spin_unlock_irqrestore(&used_lock, flags);
 
 			pr_debug("leaving get_page\n");
@@ -135,27 +132,26 @@ int tmem_local_get_page(struct page *page, struct tmem_key tmem_key, size_t *len
 
 	spin_unlock_irqrestore(&used_lock, flags);
 	/* pr_debug("leaving get_page - failed\n"); */
+	*value_len = 0;
 
 	return -EINVAL;
 }
 
-void tmem_local_invalidate_page(struct tmem_key tmem_key)
+void tmem_local_invalidate_page(void *key, size_t key_len)
 {
 	struct page_list *page_entry;
 	unsigned long flags;
-	void *key = tmem_key.key;
-	size_t key_len = tmem_key.key_len;
 
 	pr_debug("entering invalidate_page\n");
 
 	spin_lock_irqsave(&used_lock, flags);
 	hash_for_each_possible(used_pages, page_entry, hash_node, *(long *) key) {
-		if (!memcmp(page_entry->tmem_key.key, key, min(tmem_key.key_len, key_len))) {
+		if (!memcmp(page_entry->key, key, min(page_entry->key_len, key_len))) {
 			hash_del(&page_entry->hash_node);
 			spin_unlock_irqrestore(&used_lock, flags);
 
 			kfree(page_entry->value);
-			kfree(page_entry->tmem_key.key);
+			kfree(page_entry->key);
 			kfree(page_entry);
 
 
@@ -186,7 +182,7 @@ void tmem_local_invalidate_area(void)
 	hash_for_each(used_pages, bkt, page_entry, hash_node) {
 		hash_del(&page_entry->hash_node);
 
-		kfree(page_entry->tmem_key.key);
+		kfree(page_entry->key);
 		kfree(page_entry->value);
 		kfree(page_entry);
 

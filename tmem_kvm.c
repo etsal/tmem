@@ -36,7 +36,7 @@ int tmem_kvm_put_page(void *key, size_t key_len, void *value, size_t value_len)
 		.value = (void *) virt_to_phys(value),
 		.value_len = value_len,
 	};
-	request.tmem_put_request = put_request;
+	request.put = put_request;
 	
 	*((struct tmem_request *)(page_to_virt(page))) = request;
 
@@ -60,7 +60,7 @@ int tmem_kvm_get_page(void *key, size_t key_len, void *value, size_t *value_lenp
 		.value = (void *) virt_to_phys(value),
 		.value_lenp = (void *) virt_to_phys(value_len_ptr),
 	};
-	request.tmem_get_request = get_request;
+	request.get = get_request;
 
 	*((struct tmem_request *)(page_to_virt(page))) = request;
 
@@ -84,7 +84,7 @@ void tmem_kvm_invalidate_page(void *key, size_t key_len)
 		.key = (void *) virt_to_phys(key),
 		.key_len = key_len,
 	};
-	request.tmem_invalidate_request = invalidate_request;
+	request.inval = invalidate_request;
 
 	*((struct tmem_request *)(page_to_virt(page))) = request;
 

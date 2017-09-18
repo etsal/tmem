@@ -81,11 +81,11 @@ long tmem_chrdev_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 	case TMEM_GET:	
 		pr_debug("got into get");
 	
-		if (copy_from_user(&tmem_request.tmem_get_request, (struct tmem_get_request *) arg, sizeof(struct tmem_get_request))) 
+		if (copy_from_user(&tmem_request.get, (struct tmem_get_request *) arg, sizeof(struct tmem_get_request))) 
 			return -ERESTARTSYS;
 
-		key_len = tmem_request.tmem_get_request.key_len;
-		ret = get_key(&key, tmem_request.tmem_get_request.key, key_len);
+		key_len = tmem_request.get.key_len;
+		ret = get_key(&key, tmem_request.get.key, key_len);
 		if (ret < 0) 
 			return ret;
 
@@ -94,12 +94,12 @@ long tmem_chrdev_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 			value_len = 0;		
 
 
-		if (copy_to_user(tmem_request.tmem_get_request.value, value, value_len)) {
+		if (copy_to_user(tmem_request.get.value, value, value_len)) {
 			pr_err("GET: copying value to user failed");
 			return -EINVAL;
 		}
 
-		if (copy_to_user(tmem_request.tmem_get_request.value_lenp, &value_len, sizeof(value_len))) {
+		if (copy_to_user(tmem_request.get.value_lenp, &value_len, sizeof(value_len))) {
 			return -EINVAL;
 		}
 
@@ -108,17 +108,17 @@ long tmem_chrdev_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 	case TMEM_PUT:
 		pr_debug("got into put");
 
-		if (copy_from_user(&tmem_request.tmem_put_request, (struct tmem_put_request *) arg, sizeof(struct tmem_put_request))) 
+		if (copy_from_user(&tmem_request.put, (struct tmem_put_request *) arg, sizeof(struct tmem_put_request))) 
 			return -ERESTARTSYS;
 
-		key_len = tmem_request.tmem_put_request.key_len;
-		ret = get_key(&key, tmem_request.tmem_put_request.key, key_len);
+		key_len = tmem_request.put.key_len;
+		ret = get_key(&key, tmem_request.put.key, key_len);
 		if (ret < 0) 
 			return ret;
 
 
-		value_len = tmem_request.tmem_put_request.value_len;
-		if (copy_from_user(value, tmem_request.tmem_put_request.value, value_len)) {
+		value_len = tmem_request.put.value_len;
+		if (copy_from_user(value, tmem_request.put.value, value_len)) {
 			pr_debug("PUT: copying value to user failed");
 			return -EINVAL;
 		}
@@ -133,11 +133,11 @@ long tmem_chrdev_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 	case TMEM_INVAL:
 		pr_debug("Got into invalidate");
 
-		if (copy_from_user(&tmem_request.tmem_invalidate_request, (struct tmem_invalidate_request *) arg, sizeof(struct tmem_invalidate_request))) 
+		if (copy_from_user(&tmem_request.inval, (struct tmem_invalidate_request *) arg, sizeof(struct tmem_invalidate_request))) 
 			return -ERESTARTSYS;
 
-		key_len = tmem_request.tmem_invalidate_request.key_len;
-		ret = get_key(&key, tmem_request.tmem_invalidate_request.key, key_len);
+		key_len = tmem_request.inval.key_len;
+		ret = get_key(&key, tmem_request.inval.key, key_len);
 		if (ret < 0) 
 			return ret;
 		

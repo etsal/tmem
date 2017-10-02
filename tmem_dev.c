@@ -90,8 +90,18 @@ long tmem_chrdev_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 			return ret;
 
 
-		if (tmem_get(key, key_len, value, &value_len) < 0) 
-			value_len = 0;		
+		ret = tmem_get(key, key_len, value, &value_len); 
+		if (ret < 0 && ret != -EINVAL)
+			break;			
+
+		if (copy_to_user(tmem_request.get.value_lenp, &value_len, sizeof(value_len))) 
+			return -EINVAL;
+		
+
+		if (ret == -EINVAL) {
+			pr_err("NOT FOUND");
+			break;
+		}
 
 
 		if (copy_to_user(tmem_request.get.value, value, value_len)) {
@@ -99,9 +109,6 @@ long tmem_chrdev_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 			return -EINVAL;
 		}
 
-		if (copy_to_user(tmem_request.get.value_lenp, &value_len, sizeof(value_len))) {
-			return -EINVAL;
-		}
 
 		break;
 

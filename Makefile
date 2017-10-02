@@ -2,7 +2,8 @@ FLAGS = -g -DDEBUG
 
 #If the environment variable is set, no extra info is required
 ifneq ($(KERNELRELEASE),)
-	obj-m += tmem_kvm.o tmem_dummy.o tmem_local.o
+	obj-m += tmem_kvm.o tmem_dummy.o tmem_sleep.o
+	obj-m += tmem_local.o
 	obj-m += tmem_dev.o tmem_frontswap.o
 	#If it isn't, use the shell to find the kernel version and the directory
 else

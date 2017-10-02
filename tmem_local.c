@@ -26,7 +26,7 @@ DEFINE_HASHTABLE(used_pages, 10);
 
 #define TMEM_POOL_ID (0) 
 #define TMEM_OBJ_ID (0) 
-#define TMEM_POOL_SIZE (64 * 1024 * 1024) 
+#define TMEM_POOL_SIZE (1024 * 1024 * 1024) 
 
 int tmem_local_put_page(void *key, size_t key_len, void *value, size_t value_len)
 {
@@ -40,7 +40,7 @@ int tmem_local_put_page(void *key, size_t key_len, void *value, size_t value_len
 
 	/* If the page already exists, update it */
 	spin_lock_irqsave(&used_lock, flags);
-	hash_for_each_possible(used_pages, page_entry, hash_node, *(long *) key) {
+	hash_for_each_possible(used_pages, page_entry, hash_node, *(char *) key) {
         /* TODO: Is this correct? The lengths seem weird */
 		if (!memcmp(page_entry->key, key, min(page_entry->key_len, key_len))) { 
 			already_exists = 1;
@@ -77,7 +77,7 @@ int tmem_local_put_page(void *key, size_t key_len, void *value, size_t value_len
 
 	if(!already_exists){
 		spin_lock_irqsave(&used_lock, flags);
-		hash_add(used_pages, &page_entry->hash_node, *(long *)key);
+		hash_add(used_pages, &page_entry->hash_node, *(char *)key);
 		spin_unlock_irqrestore(&used_lock, flags);
 	
 		current_memory += PAGE_SIZE;
@@ -117,7 +117,7 @@ int tmem_local_get_page(void *key, size_t key_len, void *value, size_t *value_le
 
 	pr_debug("entering get_page\n");
 	spin_lock_irqsave(&used_lock, flags);
-	hash_for_each_possible(used_pages, page_entry, hash_node, *(long *) key) {
+	hash_for_each_possible(used_pages, page_entry, hash_node, *(char *) key) {
 		if (!memcmp(page_entry->key, key, min(page_entry->key_len, key_len))) {
 
 			*value_len = page_entry->value_len;
@@ -145,7 +145,7 @@ void tmem_local_invalidate_page(void *key, size_t key_len)
 	pr_debug("entering invalidate_page\n");
 
 	spin_lock_irqsave(&used_lock, flags);
-	hash_for_each_possible(used_pages, page_entry, hash_node, *(long *) key) {
+	hash_for_each_possible(used_pages, page_entry, hash_node, *(char *) key) {
 		if (!memcmp(page_entry->key, key, min(page_entry->key_len, key_len))) {
 			hash_del(&page_entry->hash_node);
 			spin_unlock_irqrestore(&used_lock, flags);

@@ -14,8 +14,6 @@
 #include <uapi/linux/kvm_para.h>
 
 
-#define TMEM_POOL_ID (0) 
-#define TMEM_OBJ_ID (0) 
 #define TMEM_POOL_SIZE (64 * 1024 * 1024) 
 
 

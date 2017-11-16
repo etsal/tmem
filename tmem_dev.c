@@ -93,21 +93,19 @@ long tmem_chrdev_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		ret = tmem_get(key, key_len, value, &value_len); 
 		if (ret < 0 && ret != -EINVAL)
 			break;			
-
-		if (copy_to_user(tmem_request.get.value_lenp, &value_len, sizeof(value_len))) 
-			return -EINVAL;
+	
+		if (ret == -EINVAL) 
+			break;
 		
 
-		if (ret == -EINVAL) {
-			pr_err("NOT FOUND");
+		if (copy_to_user(tmem_request.get.value_lenp, &value_len, sizeof(value_len))) {
+			ret = -EINVAL;
 			break;
 		}
 
 
-		if (copy_to_user(tmem_request.get.value, value, value_len)) {
-			pr_err("GET: copying value to user failed");
-			return -EINVAL;
-		}
+		if (copy_to_user(tmem_request.get.value, value, value_len)) 
+			ret = -EINVAL;
 
 
 		break;
@@ -121,18 +119,19 @@ long tmem_chrdev_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		key_len = tmem_request.put.key_len;
 		ret = get_key(&key, tmem_request.put.key, key_len);
 		if (ret < 0) 
-			return ret;
+			break;
 
 
 		value_len = tmem_request.put.value_len;
 		if (copy_from_user(value, tmem_request.put.value, value_len)) {
 			pr_debug("PUT: copying value to user failed");
-			return -EINVAL;
+			ret = -EINVAL;
+			break;
 		}
 
 		if (tmem_put(key, key_len, value, value_len) < 0) {
 			pr_debug("TMEM_PUT command failed");
-			return -EINVAL;
+			ret = -EINVAL;
 		}
 
 		break;

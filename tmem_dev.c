@@ -13,6 +13,11 @@
 
 #include <tmem/tmem_ops.h> 
 
+struct tmem_dev {
+	void *buf;
+	u32 flags;
+};
+
 
 /* 
  * This can be removed, if we assign "namespaces" to each 
@@ -22,24 +27,44 @@ DEFINE_SEMAPHORE(lock);
 
 int tmem_chrdev_open(struct inode *inode, struct file *filp)
 {
-	void *buffer;
-	
-	if (down_trylock(&lock))
-		return -EBUSY;
+	void *buffer = NULL;
+	struct tmem_dev *tmem_dev = NULL;
+	int ret;
+
+	tmem_dev = kmalloc(sizeof(struct tmem_dev), GFP_KERNEL);
+	if (!tmem_dev)
+		ret = -ENOMEM;
+		
+	if (down_trylock(&lock)) {
+		ret = -EBUSY;
+		goto open_out;
+	}
 
 	buffer = kmalloc(TMEM_MAX, GFP_KERNEL);
 	if (!buffer) {
 		up(&lock);
-		return -ENOMEM;
+		ret = -ENOMEM;
+		goto open_out;
 	}
-	filp->private_data = buffer;
+
+	tmem_dev->buf = buffer;
+	tmem_dev->flags = 0x00000000;
+	filp->private_data = tmem_dev;
 
 	return 0;
+
+open_out:
+	if (!tmem_dev)
+		kfree(tmem_dev);
+	return ret;
 }
 
 int tmem_chrdev_release(struct inode *inode, struct file *filp)
 {
-	kfree(filp->private_data);
+	struct tmem_dev *tmem_dev = (struct tmem_dev *) filp->private_data;
+
+	kfree(tmem_dev->buf);
+	kfree(tmem_dev);
 	up(&lock);
 
 	return 0;
@@ -69,13 +94,14 @@ int get_key(void **local_key, __user void *user_key, size_t key_len)
 
 long tmem_chrdev_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 {
-	void *key, *value= filp->private_data;
+	void *key, *value;
 	size_t key_len, value_len;
+	struct tmem_dev *tmem_dev;
 	struct tmem_request tmem_request;
 	int ret;
-
-
-
+	
+	tmem_dev = (struct tmem_dev *) filp->private_data;
+	value = tmem_dev->buf;
 
 	switch (cmd) {
 	case TMEM_GET:	

@@ -177,6 +177,10 @@ long tmem_chrdev_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 
 		break;
 
+	case TMEM_CONTROL:
+		tmem_dev->flags |= (arg & 0x0000FFFF);
+		tmem_dev->flags &= (arg >> 16);
+		break;	
 
 	default:
 
@@ -207,8 +211,8 @@ static int __init init_func(void)
 {
 	int ret = 0;
 
-	pr_err("IOCTL Numbers for get, put, invalidate: %ld %ld %d\n",
-		TMEM_GET, TMEM_PUT, TMEM_INVAL);
+	pr_err("IOCTL Numbers for get, put, invalidate, control: %ld %ld %d %d\n",
+		TMEM_GET, TMEM_PUT, TMEM_INVAL, TMEM_CONTROL);
 
 	ret = misc_register(&tmem_chrdev);
 	if (ret)

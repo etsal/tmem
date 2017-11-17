@@ -10,12 +10,13 @@
 #include <linux/vmalloc.h>
 #include <linux/uaccess.h>
 #include <linux/slab.h>
+#include <linux/delay.h>
 
 #include <tmem/tmem_ops.h> 
 
 struct tmem_dev {
 	void *buf;
-	u32 flags;
+	long flags;
 };
 
 
@@ -50,7 +51,6 @@ int tmem_chrdev_open(struct inode *inode, struct file *filp)
 	tmem_dev->buf = buffer;
 	tmem_dev->flags = 0x00000000;
 	filp->private_data = tmem_dev;
-	pr_err("%p %u", tmem_dev->buf, tmem_dev->flags);
 
 	return 0;
 
@@ -147,8 +147,10 @@ int tmem_chrdev_get(struct tmem_dev *tmem_dev, struct tmem_get_request get_reque
 		goto get_out;
 
 	/* In case the key is not in the store, we return a value of length 0 */
-	if (ret == -EINVAL) 
+	if (ret == -EINVAL) {
+		ret = 0;
 		value_len = 0;
+	}
 	
 
 	if (copy_to_user(get_request.value_lenp, &value_len, sizeof(value_len))) {
@@ -194,6 +196,10 @@ long tmem_chrdev_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 	int ret = 0;
 	
 	tmem_dev = (struct tmem_dev *) filp->private_data;
+		
+	if (tmem_dev->flags & TCTRL_SLEEPY_BIT)
+		usleep_range(SLEEP_USECS - SLEEP_USECS_SLACK, SLEEP_USECS + SLEEP_USECS_SLACK);
+
 
 	switch (cmd) {
 	case TMEM_GET:	
@@ -235,11 +241,19 @@ long tmem_chrdev_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 
 	case TMEM_CONTROL:
 
-		if (arg & (TCTRL_REAL))
-			tmem_dev->flags &= ~ TCTRL_DUMMY_BIT;
-				
 		if (arg & (TCTRL_DUMMY))
 			tmem_dev->flags |= TCTRL_DUMMY_BIT;
+
+		if (arg & (TCTRL_REAL))
+			tmem_dev->flags &= ~ TCTRL_DUMMY_BIT;				
+
+		if (arg & (TCTRL_SLEEPY))
+			tmem_dev->flags |= TCTRL_SLEEPY_BIT;
+				
+		if (arg & (TCTRL_AWAKE))
+			tmem_dev->flags &= ~ TCTRL_SLEEPY_BIT;
+
+
 
 		return 0;
 

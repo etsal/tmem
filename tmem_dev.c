@@ -116,6 +116,10 @@ int tmem_chrdev_put(struct tmem_dev *tmem_dev, struct tmem_put_request put_reque
 		goto put_out;
 	}
 
+	/* If the dummy bit is set, skip the actual operation */
+	if (flags & TCTRL_DUMMY_BIT)
+		goto put_out;
+
 	if (tmem_put(key, key_len, value, value_len) < 0) {
 		pr_debug("TMEM_PUT command failed");
 		ret = -EINVAL;
@@ -142,12 +146,15 @@ int tmem_chrdev_get(struct tmem_dev *tmem_dev, struct tmem_get_request get_reque
 
 	value = tmem_dev->buf;
 
-	ret = tmem_get(key, key_len, value, &value_len); 
-	if (ret < 0 && ret != -EINVAL)
-		goto get_out;
+	/* Only actually do the operation if not in dummy mode */
+	if (!(flags & TCTRL_DUMMY_BIT)) {
+		ret = tmem_get(key, key_len, value, &value_len); 
+		if (ret < 0 && ret != -EINVAL)
+			goto get_out;
+	}
 
-	/* In case the key is not in the store, or we are in silent mode, we return a value of length 0 */
-	if (ret == -EINVAL || (flags & TCTRL_SILENT_BIT)) {
+	/* In case the key is not in the store, or we are in silent or dummy mode, we return a value of length 0 */
+	if (ret == -EINVAL || (flags & (TCTRL_DUMMY_BIT | TCTRL_SILENT_BIT))) {
 		ret = 0;
 		value_len = 0;
 	} 
@@ -167,7 +174,7 @@ get_out:
 
 }
 
-int tmem_chrdev_inval(struct tmem_invalidate_request invalidate_request) {
+int tmem_chrdev_inval(struct tmem_invalidate_request invalidate_request, long flags) {
 
 	void *key;
 	size_t key_len;
@@ -178,8 +185,13 @@ int tmem_chrdev_inval(struct tmem_invalidate_request invalidate_request) {
 	if (ret < 0) 
 		return ret;
 	
+	if (flags & TCTRL_DUMMY_BIT)
+		goto inval_out;
+
 	
 	tmem_invalidate(key, key_len);
+
+inval_out:
 
 	kfree(key);
 
@@ -192,10 +204,7 @@ long tmem_chrdev_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 {
 	struct tmem_dev *tmem_dev;
 	struct tmem_request tmem_request;
-	const size_t zero_length_reply = 0;
 	long flags;
-	int ret = 0;
-	
 
 	tmem_dev = (struct tmem_dev *) filp->private_data;
 
@@ -220,31 +229,15 @@ long tmem_chrdev_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 	switch (cmd) {
 	case TMEM_GET:	
 	
-		if (flags & TCTRL_DUMMY_BIT) {
-			if (copy_to_user(tmem_request.get.value_lenp, &zero_length_reply, sizeof(zero_length_reply))) 
-				ret = -EINVAL;
-
-			return ret;
-		}
-
-	
 		return tmem_chrdev_get(tmem_dev, tmem_request.get, flags);
 
 	case TMEM_PUT:
 
-		if (flags & TCTRL_DUMMY_BIT)
-			return 0;
-
 		return tmem_chrdev_put(tmem_dev, tmem_request.put, flags);
-
 
 	case TMEM_INVAL:
 
-		if (flags & TCTRL_DUMMY_BIT)
-			return 0;
-
-		return tmem_chrdev_inval(tmem_request.inval);
-
+		return tmem_chrdev_inval(tmem_request.inval, flags);
 
 	case TMEM_CONTROL:
 

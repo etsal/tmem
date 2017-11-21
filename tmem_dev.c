@@ -95,7 +95,7 @@ int get_key(void **local_key, __user void *user_key, size_t key_len)
 }
 
 
-int tmem_chrdev_put(struct tmem_dev *tmem_dev, struct tmem_put_request put_request) {
+int tmem_chrdev_put(struct tmem_dev *tmem_dev, struct tmem_put_request put_request, long flags) {
 
 	void *key, *value;
 	size_t key_len, value_len;
@@ -109,6 +109,7 @@ int tmem_chrdev_put(struct tmem_dev *tmem_dev, struct tmem_put_request put_reque
 
 	value = tmem_dev->buf;
 	value_len = put_request.value_len;
+
 	if (copy_from_user(value, put_request.value, value_len)) {
 		pr_debug("PUT: copying value to user failed");
 		ret = -EINVAL;		
@@ -127,7 +128,7 @@ put_out:
 }
 
 
-int tmem_chrdev_get(struct tmem_dev *tmem_dev, struct tmem_get_request get_request) {
+int tmem_chrdev_get(struct tmem_dev *tmem_dev, struct tmem_get_request get_request, long flags) {
 
 	void *key, *value;
 	size_t key_len, value_len;
@@ -141,13 +142,12 @@ int tmem_chrdev_get(struct tmem_dev *tmem_dev, struct tmem_get_request get_reque
 
 	value = tmem_dev->buf;
 
-
 	ret = tmem_get(key, key_len, value, &value_len); 
 	if (ret < 0 && ret != -EINVAL)
 		goto get_out;
 
 	/* In case the key is not in the store, or we are in silent mode, we return a value of length 0 */
-	if (ret == -EINVAL || (tmem_dev->flags & TCTRL_SILENT_BIT)) {
+	if (ret == -EINVAL || (flags & TCTRL_SILENT_BIT)) {
 		ret = 0;
 		value_len = 0;
 	} 
@@ -178,6 +178,7 @@ int tmem_chrdev_inval(struct tmem_invalidate_request invalidate_request) {
 	if (ret < 0) 
 		return ret;
 	
+	
 	tmem_invalidate(key, key_len);
 
 	kfree(key);
@@ -192,21 +193,34 @@ long tmem_chrdev_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 	struct tmem_dev *tmem_dev;
 	struct tmem_request tmem_request;
 	const size_t zero_length_reply = 0;
+	long flags;
 	int ret = 0;
 	
+
 	tmem_dev = (struct tmem_dev *) filp->private_data;
+
+	if (cmd == TMEM_CONTROL) {
+		tmem_request.flags = arg;
+	} else { 
+		if (copy_from_user(&tmem_request, (struct tmem_request *) arg, sizeof(tmem_request))) 
+			return -ERESTARTSYS;	
+	}
+
+	/* If the request has a nonzero flags argument, override the settings of the device */
+	if (tmem_request.flags)
+		flags = tmem_request.flags;
+	else
+		flags = tmem_dev->flags;
+
 		
-	if (tmem_dev->flags & TCTRL_SLEEPY_BIT)
+	if (flags & TCTRL_SLEEPY_BIT)
 		usleep_range(SLEEP_USECS - SLEEP_USECS_SLACK, SLEEP_USECS + SLEEP_USECS_SLACK);
 
 
 	switch (cmd) {
 	case TMEM_GET:	
 	
-		if (copy_from_user(&tmem_request.get, (struct tmem_get_request *) arg, sizeof(struct tmem_get_request))) 
-			return -ERESTARTSYS;
-
-		if (tmem_dev->flags & TCTRL_DUMMY_BIT) {
+		if (flags & TCTRL_DUMMY_BIT) {
 			if (copy_to_user(tmem_request.get.value_lenp, &zero_length_reply, sizeof(zero_length_reply))) 
 				ret = -EINVAL;
 
@@ -214,25 +228,19 @@ long tmem_chrdev_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		}
 
 	
-		return tmem_chrdev_get(tmem_dev, tmem_request.get);
+		return tmem_chrdev_get(tmem_dev, tmem_request.get, flags);
 
 	case TMEM_PUT:
 
-		if (copy_from_user(&tmem_request.put, (struct tmem_put_request *) arg, sizeof(struct tmem_put_request))) 
-			return -ERESTARTSYS;
-
-		if (tmem_dev->flags & TCTRL_DUMMY_BIT)
+		if (flags & TCTRL_DUMMY_BIT)
 			return 0;
 
-		return tmem_chrdev_put(tmem_dev, tmem_request.put);
+		return tmem_chrdev_put(tmem_dev, tmem_request.put, flags);
 
 
 	case TMEM_INVAL:
 
-		if (copy_from_user(&tmem_request.inval, (struct tmem_invalidate_request *) arg, sizeof(struct tmem_invalidate_request))) 
-			return -ERESTARTSYS;
-
-		if (tmem_dev->flags & TCTRL_DUMMY_BIT)
+		if (flags & TCTRL_DUMMY_BIT)
 			return 0;
 
 		return tmem_chrdev_inval(tmem_request.inval);

@@ -146,13 +146,12 @@ int tmem_chrdev_get(struct tmem_dev *tmem_dev, struct tmem_get_request get_reque
 	if (ret < 0 && ret != -EINVAL)
 		goto get_out;
 
-	/* In case the key is not in the store, we return a value of length 0 */
-	if (ret == -EINVAL) {
+	/* In case the key is not in the store, or we are in silent mode, we return a value of length 0 */
+	if (ret == -EINVAL || (tmem_dev->flags & TCTRL_SILENT_BIT)) {
 		ret = 0;
 		value_len = 0;
-	}
+	} 
 	
-
 	if (copy_to_user(get_request.value_lenp, &value_len, sizeof(value_len))) {
 		ret = -EINVAL;
 		goto get_out;
@@ -241,18 +240,26 @@ long tmem_chrdev_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 
 	case TMEM_CONTROL:
 
-		if (arg & (TCTRL_DUMMY))
-			tmem_dev->flags |= TCTRL_DUMMY_BIT;
+		/* Control whether the backend will actually do anything */
+		if (arg & (TCTRL_DUMMY)) 
+			tmem_dev->flags |= TCTRL_DUMMY_BIT;	
 
 		if (arg & (TCTRL_REAL))
 			tmem_dev->flags &= ~ TCTRL_DUMMY_BIT;				
 
+		/* Control whether the backend will sleep for some us before commencing with the operation */
 		if (arg & (TCTRL_SLEEPY))
 			tmem_dev->flags |= TCTRL_SLEEPY_BIT;
 				
 		if (arg & (TCTRL_AWAKE))
 			tmem_dev->flags &= ~ TCTRL_SLEEPY_BIT;
 
+		/* Control whether the backend will copy_to_user() the result (where applicable) */
+		if (arg & (TCTRL_SILENT)) 
+			tmem_dev->flags |= TCTRL_SILENT_BIT;	
+				
+		if (arg & (TCTRL_ANSWER))
+			tmem_dev->flags &= ~ TCTRL_SILENT_BIT;
 
 
 		return 0;
@@ -285,7 +292,7 @@ static int __init init_func(void)
 {
 	int ret = 0;
 
-	pr_err("IOCTL Numbers for get, put, invalidate, control: %ld %ld %d %d\n",
+	pr_err("IOCTL Numbers for get, put, invaliuate, control: %lu %lu %lu %lu\n",
 		TMEM_GET, TMEM_PUT, TMEM_INVAL, TMEM_CONTROL);
 
 	ret = misc_register(&tmem_chrdev);

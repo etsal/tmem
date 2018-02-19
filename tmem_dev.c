@@ -17,6 +17,7 @@
 struct tmem_dev {
 	void *buf;
 	long flags;
+	size_t generated_size;
 };
 
 
@@ -50,6 +51,7 @@ int tmem_chrdev_open(struct inode *inode, struct file *filp)
 
 	tmem_dev->buf = buffer;
 	tmem_dev->flags = 0x00000000;
+	tmem_dev->generated_size = 0;
 	filp->private_data = tmem_dev;
 
 	return 0;
@@ -110,10 +112,13 @@ int tmem_chrdev_put(struct tmem_dev *tmem_dev, struct tmem_put_request put_reque
 	value = tmem_dev->buf;
 	value_len = put_request.value_len;
 
-	if (copy_from_user(value, put_request.value, value_len)) {
-		pr_debug("PUT: copying value to user failed");
-		ret = -EINVAL;		
-		goto put_out;
+	/* If we are in generate mode, we do not get the value from userspace */
+	if (!(flags & TCTRL_GENERATE_BIT)) {
+		if (copy_from_user(value, put_request.value, value_len)) {
+			pr_debug("PUT: copying value to user failed");
+			ret = -EINVAL;		
+			goto put_out;
+		}
 	}
 
 	/* If the dummy bit is set, skip the actual operation */
@@ -135,7 +140,7 @@ put_out:
 int tmem_chrdev_get(struct tmem_dev *tmem_dev, struct tmem_get_request get_request, long flags) {
 
 	void *key, *value;
-	size_t key_len, value_len;
+	size_t key_len, value_len = 10;
 	int ret = 0;
 
 
@@ -146,12 +151,16 @@ int tmem_chrdev_get(struct tmem_dev *tmem_dev, struct tmem_get_request get_reque
 
 	value = tmem_dev->buf;
 
-	/* Only actually do the operation if not in dummy mode */
-	if (!(flags & TCTRL_DUMMY_BIT)) {
+	/* Only actually do the operation if not in dummy or generate mode */
+	if (!(flags & (TCTRL_DUMMY_BIT | TCTRL_GENERATE_BIT))) {
 		ret = tmem_get(key, key_len, value, &value_len); 
 		if (ret < 0 && ret != -EINVAL)
 			goto get_out;
 	}
+
+	if (flags & TCTRL_GENERATE_BIT) 
+		value_len = tmem_dev->generated_size;
+	
 
 	/* In case the key is not in the store, or we are in silent or dummy mode, we return a value of length 0 */
 	if (ret == -EINVAL || (flags & (TCTRL_DUMMY_BIT | TCTRL_SILENT_BIT))) {
@@ -210,9 +219,11 @@ long tmem_chrdev_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 
 	if (cmd == TMEM_CONTROL) {
 		tmem_request.flags = arg;
-	} else { 
+	} else if (cmd != TMEM_GENERATE_SIZE) { 
 		if (copy_from_user(&tmem_request, (struct tmem_request *) arg, sizeof(tmem_request))) 
 			return -ERESTARTSYS;	
+	} else {
+		tmem_request.flags = 0;
 	}
 
 	/* If the request has a nonzero flags argument, override the settings of the device */
@@ -222,8 +233,9 @@ long tmem_chrdev_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		flags = tmem_dev->flags;
 
 		
-	if (flags & TCTRL_SLEEPY_BIT)
+	if (flags & TCTRL_SLEEPY_BIT) 
 		usleep_range(SLEEP_USECS - SLEEP_USECS_SLACK, SLEEP_USECS + SLEEP_USECS_SLACK);
+	
 
 
 	switch (cmd) {
@@ -262,10 +274,23 @@ long tmem_chrdev_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		if (arg & (TCTRL_ANSWER))
 			tmem_dev->flags &= ~ TCTRL_SILENT_BIT;
 
+		/* Control whether the backend will generate the result */
+		if (arg & (TCTRL_GENERATE)) 
+			tmem_dev->flags |= TCTRL_GENERATE_BIT;	
+				
+		if (arg & (TCTRL_INPUT))
+			tmem_dev->flags &= ~ TCTRL_GENERATE_BIT;
 
 		return 0;
 
+	case TMEM_GENERATE_SIZE:
+		
+		if (arg < 0) 
+			return -EINVAL;
 
+		tmem_dev->generated_size = (size_t) arg;
+			
+		return 0;
 	default:
 
 		pr_err("illegal argument");

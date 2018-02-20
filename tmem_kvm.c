@@ -20,8 +20,8 @@
 static u64 current_memory; 
 static struct tmem_request request;
 
-struct page *page = NULL;
-size_t *value_len_ptr = NULL;
+static struct page *page = NULL;
+static size_t *value_len_ptr = NULL;
 
 
 int tmem_kvm_put_page(void *key, size_t key_len, void *value, size_t value_len)

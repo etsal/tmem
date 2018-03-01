@@ -36,11 +36,6 @@ int tmem_chrdev_open(struct inode *inode, struct file *filp)
 	tmem_dev = kmalloc(sizeof(struct tmem_dev), GFP_KERNEL);
 	if (!tmem_dev)
 		ret = -ENOMEM;
-		
-	if (down_trylock(&lock)) {
-		ret = -EBUSY;
-		goto open_out;
-	}
 
 	buffer = kmalloc(TMEM_MAX, GFP_KERNEL);
 	if (!buffer) {
@@ -65,11 +60,11 @@ open_out:
 
 int tmem_chrdev_release(struct inode *inode, struct file *filp)
 {
-	struct tmem_dev *tmem_dev = (struct tmem_dev *) filp->private_data;
 
-	kfree(tmem_dev->buf);
-	kfree(tmem_dev);
-	up(&lock);
+	/*
+	 * We do not release the device's resources because 
+	 * it's now a singleton;
+	 */
 
 	return 0;
 }
@@ -111,6 +106,12 @@ int tmem_chrdev_put(struct tmem_dev *tmem_dev, struct tmem_put_request put_reque
 
 	value = tmem_dev->buf;
 	value_len = put_request.value_len;
+
+	/* The buffer can only hold so much data */
+	if (value_len > TMEM_MAX) {
+		ret = -ENOMEM;
+		goto put_out;
+	}
 
 	/* If we are in generate mode, we do not get the value from userspace */
 	if (!(flags & TCTRL_GENERATE_BIT)) {
@@ -214,8 +215,14 @@ long tmem_chrdev_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 	struct tmem_dev *tmem_dev;
 	struct tmem_request tmem_request;
 	long flags;
+	int ret = 0;
 
 	tmem_dev = (struct tmem_dev *) filp->private_data;
+
+	if (down_trylock(&lock)) {
+		return -EBUSY;
+	}
+
 
 	if (cmd == TMEM_CONTROL) {
 		tmem_request.flags = arg;
@@ -241,15 +248,18 @@ long tmem_chrdev_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 	switch (cmd) {
 	case TMEM_GET:	
 	
-		return tmem_chrdev_get(tmem_dev, tmem_request.get, flags);
+		ret = tmem_chrdev_get(tmem_dev, tmem_request.get, flags);
+		goto ioctl_out;
 
 	case TMEM_PUT:
 
-		return tmem_chrdev_put(tmem_dev, tmem_request.put, flags);
+		ret = tmem_chrdev_put(tmem_dev, tmem_request.put, flags);
+		goto ioctl_out;
 
 	case TMEM_INVAL:
 
-		return tmem_chrdev_inval(tmem_request.inval, flags);
+		ret = tmem_chrdev_inval(tmem_request.inval, flags);
+		goto ioctl_out;
 
 	case TMEM_CONTROL:
 
@@ -281,23 +291,30 @@ long tmem_chrdev_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		if (arg & (TCTRL_INPUT))
 			tmem_dev->flags &= ~ TCTRL_GENERATE_BIT;
 
-		return 0;
+		ret = 0;
+		goto ioctl_out;
 
 	case TMEM_GENERATE_SIZE:
 		
-		if (arg < 0) 
-			return -EINVAL;
+		if (arg < 0) {
+			ret = -EINVAL;
+			goto ioctl_out;
+		}
 
 		tmem_dev->generated_size = (size_t) arg;
 			
-		return 0;
+		ret = 0;
+		goto ioctl_out;
 	default:
 
-		pr_err("illegal argument");
-		return -EINVAL;
+		ret = -ENOSYS;
+		goto ioctl_out;
 	}
 
+ioctl_out:
+	up(&lock);
 
+	return ret;
 }
 
 const struct file_operations tmem_fops = {

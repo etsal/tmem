@@ -7,6 +7,7 @@
 #include <linux/semaphore.h>
 #include <linux/spinlock.h>
 #include <linux/miscdevice.h>
+#include <linux/debugfs.h>
 #include <linux/vmalloc.h>
 #include <linux/uaccess.h>
 #include <linux/slab.h>
@@ -14,12 +15,70 @@
 
 #include <tmem/tmem_ops.h> 
 
+#ifdef CONFIG_DEBUG_FS
+static u64 tmem_put_counter;
+static u64 tmem_get_counter;
+static u64 tmem_control_counter;
+static u64 tmem_invalidate_counter;
+static u64 tmem_generate_counter;
+
+static u64 hcall_put_counter;
+static u64 hcall_get_counter;
+static u64 hcall_invalidate_counter;
+
+static inline void inc_tmem_put(void){ 
+	tmem_put_counter++; 
+}
+
+static inline void inc_tmem_get(void){ 
+	tmem_get_counter++; 
+}
+
+static inline void inc_tmem_control(void){ 
+	tmem_control_counter++; 
+}
+
+static inline void inc_tmem_invalidate(void){ 
+	tmem_invalidate_counter++; 
+}
+
+
+static inline void inc_tmem_generate(void){ 
+	tmem_generate_counter++; 
+}
+
+static inline void inc_hcall_put(void){ 
+	hcall_put_counter++; 
+}
+
+static inline void inc_hcall_get(void){ 
+	hcall_get_counter++; 
+}
+
+static inline void inc_hcall_invalidate(void){ 
+	hcall_invalidate_counter++; 
+}
+
+#else
+static inline void inc_tmem_put(void) {} 
+static inline void inc_tmem_get(void) {} 
+static inline void inc_tmem_control(void) {} 
+static inline void inc_tmem_invalidate(void) {} 
+static inline void inc_tmem_generate(void) {} 
+static inline void inc_hcall_put(void) {} 
+static inline void inc_hcall_get(void) {} 
+static inline void inc_hcall_invalidate(void) {}
+
+#endif /* CONFIG_DEBUG_FS */
+
+
 struct tmem_dev {
 	void *buf;
-	long flags;
+	u64 flags;
 	size_t generated_size;
 };
 
+struct tmem_dev *tmem_dev;
 
 /* 
  * This can be removed, if we assign "namespaces" to each 
@@ -29,38 +88,13 @@ DEFINE_SEMAPHORE(lock);
 
 int tmem_chrdev_open(struct inode *inode, struct file *filp)
 {
-	void *buffer = NULL;
-	struct tmem_dev *tmem_dev = NULL;
-	int ret;
-
-	tmem_dev = kmalloc(sizeof(struct tmem_dev), GFP_KERNEL);
-	if (!tmem_dev)
-		ret = -ENOMEM;
-
-	buffer = kmalloc(TMEM_MAX, GFP_KERNEL);
-	if (!buffer) {
-		up(&lock);
-		ret = -ENOMEM;
-		goto open_out;
-	}
-
-	tmem_dev->buf = buffer;
-	tmem_dev->flags = 0x00000000;
-	tmem_dev->generated_size = 0;
 	filp->private_data = tmem_dev;
 
 	return 0;
-
-open_out:
-	if (tmem_dev)
-		kfree(tmem_dev);
-
-	return ret;
 }
 
 int tmem_chrdev_release(struct inode *inode, struct file *filp)
 {
-
 	/*
 	 * We do not release the device's resources because 
 	 * it's now a singleton;
@@ -98,6 +132,9 @@ int tmem_chrdev_put(struct tmem_dev *tmem_dev, struct tmem_put_request put_reque
 	size_t key_len, value_len;
 	int ret = 0;
 
+
+	inc_tmem_put();	
+
 	key_len = put_request.key_len;
 	ret = get_key(&key, put_request.key, key_len);
 	if (ret < 0) 
@@ -131,6 +168,9 @@ int tmem_chrdev_put(struct tmem_dev *tmem_dev, struct tmem_put_request put_reque
 		ret = -EINVAL;
 	}
 
+	inc_hcall_put();	
+
+
 put_out:
 	kfree(key);
 	
@@ -145,6 +185,9 @@ int tmem_chrdev_get(struct tmem_dev *tmem_dev, struct tmem_get_request get_reque
 	int ret = 0;
 
 
+	inc_tmem_get();	
+
+
 	key_len = get_request.key_len;
 	ret = get_key(&key, get_request.key, key_len);
 	if (ret < 0) 
@@ -155,6 +198,9 @@ int tmem_chrdev_get(struct tmem_dev *tmem_dev, struct tmem_get_request get_reque
 	/* Only actually do the operation if not in dummy or generate mode */
 	if (!(flags & (TCTRL_DUMMY_BIT | TCTRL_GENERATE_BIT))) {
 		ret = tmem_get(key, key_len, value, &value_len); 
+
+		inc_hcall_get();	
+
 		if (ret < 0 && ret != -EINVAL)
 			goto get_out;
 	}
@@ -190,6 +236,9 @@ int tmem_chrdev_inval(struct tmem_invalidate_request invalidate_request, long fl
 	size_t key_len;
 	int ret;
 
+
+	inc_tmem_invalidate();	
+
 	key_len = invalidate_request.key_len;
 	ret = get_key(&key, invalidate_request.key, key_len);
 	if (ret < 0) 
@@ -200,6 +249,9 @@ int tmem_chrdev_inval(struct tmem_invalidate_request invalidate_request, long fl
 
 	
 	tmem_invalidate(key, key_len);
+
+	inc_hcall_invalidate();	
+
 
 inval_out:
 
@@ -262,6 +314,8 @@ long tmem_chrdev_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		goto ioctl_out;
 
 	case TMEM_CONTROL:
+		inc_tmem_control();	
+
 
 		/* Control whether the backend will actually do anything */
 		if (arg & (TCTRL_DUMMY)) 
@@ -295,6 +349,7 @@ long tmem_chrdev_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		goto ioctl_out;
 
 	case TMEM_GENERATE_SIZE:
+		inc_tmem_generate();	
 		
 		if (arg < 0) {
 			ret = -EINVAL;
@@ -331,17 +386,69 @@ struct miscdevice tmem_chrdev = {
 	.fops = &tmem_fops,
 };
 
+
+
 static int __init init_func(void)
 {
 	int ret = 0;
+	struct dentry *root; 
+	void *buffer = NULL;
 
-	pr_err("IOCTL Numbers for get, put, invaliuate, control: %lu %lu %lu %lu\n",
+	pr_err("IOCTL Numbers for get, put, invalidate, control: %lu %lu %lu %lu\n",
 		TMEM_GET, TMEM_PUT, TMEM_INVAL, TMEM_CONTROL);
 
-	ret = misc_register(&tmem_chrdev);
-	if (ret)
-		pr_err("Device registration failed\n");
+	/* Allocation and Initialization of the global tmem_dev, shared among files */
+	tmem_dev = kmalloc(sizeof(struct tmem_dev), GFP_KERNEL);
+	if (!tmem_dev) {
+		return -ENOMEM;
+	}
 
+	buffer = kmalloc(TMEM_MAX, GFP_KERNEL);
+	if (!buffer) {
+		kfree(tmem_dev);
+		return -ENOMEM;
+	}
+
+	tmem_dev->buf = buffer;
+	tmem_dev->flags = 0x00000000;
+	tmem_dev->generated_size = 0;
+
+
+	/* Device registration */
+	ret = misc_register(&tmem_chrdev);
+	if (ret) 
+		goto register_err;
+	
+
+#ifdef CONFIG_DEBUG_FS
+	
+	root = debugfs_create_dir("tmem_dev", NULL);
+	if (!root) 
+		goto debugfs_err;
+
+	debugfs_create_u64("puts", S_IRUGO, root, &tmem_put_counter);
+	debugfs_create_u64("gets", S_IRUGO, root, &tmem_get_counter);
+	debugfs_create_u64("invalidates", S_IRUGO, root, &tmem_invalidate_counter);
+	debugfs_create_u64("controls", S_IRUGO, root, &tmem_control_counter);
+	debugfs_create_u64("generates", S_IRUGO, root, &tmem_generate_counter);
+	debugfs_create_u64("hcall_puts", S_IRUGO, root, &hcall_put_counter);
+	debugfs_create_u64("hcall_gets", S_IRUGO, root, &hcall_get_counter);
+	debugfs_create_u64("hcall_invalidates", S_IRUGO, root, &hcall_invalidate_counter);
+	debugfs_create_u64("flags", S_IRUGO, root, &tmem_dev->flags);
+
+#endif /* CONFIG_DEBUG_FS */
+
+	return 0;
+
+
+debugfs_err:
+
+	misc_deregister(&tmem_chrdev); 
+	ret = -ENXIO;
+
+register_err:
+
+	pr_err("Device registration failed\n");
 	return ret;
 }
 
@@ -349,6 +456,8 @@ static int __init init_func(void)
 static void __exit exit_func(void)
 {
 	misc_deregister(&tmem_chrdev);
+	kfree(tmem_dev->buf);
+	kfree(tmem_dev);
 }
 
 

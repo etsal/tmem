@@ -75,7 +75,7 @@ static inline void inc_hcall_invalidate(void) {}
 struct tmem_dev {
 	void *buf;
 	u64 flags;
-	size_t generated_size;
+	u64 generated_size;
 };
 
 struct tmem_dev *tmem_dev;
@@ -181,7 +181,7 @@ put_out:
 int tmem_chrdev_get(struct tmem_dev *tmem_dev, struct tmem_get_request get_request, long flags) {
 
 	void *key, *value;
-	size_t key_len, value_len = 10;
+	size_t key_len, value_len;
 	int ret = 0;
 
 
@@ -266,6 +266,9 @@ long tmem_chrdev_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 {
 	struct tmem_dev *tmem_dev;
 	struct tmem_request tmem_request;
+	long __user * usrflags;
+	size_t __user *usrgensize;
+	size_t gensize;
 	long flags;
 	int ret = 0;
 
@@ -276,14 +279,11 @@ long tmem_chrdev_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 	}
 
 
-	if (cmd == TMEM_CONTROL) {
-		tmem_request.flags = arg;
-	} else if (cmd != TMEM_GENERATE_SIZE) { 
+	/* There only is a request for calls corresponding to real tmem ops*/
+	if (cmd != TMEM_GENERATE_SIZE && cmd != TMEM_CONTROL) { 
 		if (copy_from_user(&tmem_request, (struct tmem_request *) arg, sizeof(tmem_request))) 
 			return -ERESTARTSYS;	
-	} else {
-		tmem_request.flags = 0;
-	}
+	} 
 
 	/* If the request has a nonzero flags argument, override the settings of the device */
 	if (tmem_request.flags)
@@ -316,33 +316,37 @@ long tmem_chrdev_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 	case TMEM_CONTROL:
 		inc_tmem_control();	
 
+		usrflags = (__user long *) arg;
+		ret = get_user(flags, usrflags);
+		if (ret)
+			goto ioctl_out;
 
 		/* Control whether the backend will actually do anything */
-		if (arg & (TCTRL_DUMMY)) 
+		if (flags & (TCTRL_DUMMY)) 
 			tmem_dev->flags |= TCTRL_DUMMY_BIT;	
 
-		if (arg & (TCTRL_REAL))
+		if (flags & (TCTRL_REAL))
 			tmem_dev->flags &= ~ TCTRL_DUMMY_BIT;				
 
 		/* Control whether the backend will sleep for some us before commencing with the operation */
-		if (arg & (TCTRL_SLEEPY))
+		if (flags & (TCTRL_SLEEPY))
 			tmem_dev->flags |= TCTRL_SLEEPY_BIT;
 				
-		if (arg & (TCTRL_AWAKE))
+		if (flags & (TCTRL_AWAKE))
 			tmem_dev->flags &= ~ TCTRL_SLEEPY_BIT;
 
 		/* Control whether the backend will copy_to_user() the result (where applicable) */
-		if (arg & (TCTRL_SILENT)) 
+		if (flags & (TCTRL_SILENT)) 
 			tmem_dev->flags |= TCTRL_SILENT_BIT;	
 				
-		if (arg & (TCTRL_ANSWER))
+		if (flags & (TCTRL_ANSWER))
 			tmem_dev->flags &= ~ TCTRL_SILENT_BIT;
 
 		/* Control whether the backend will generate the result */
-		if (arg & (TCTRL_GENERATE)) 
+		if (flags & (TCTRL_GENERATE)) 
 			tmem_dev->flags |= TCTRL_GENERATE_BIT;	
 				
-		if (arg & (TCTRL_INPUT))
+		if (flags & (TCTRL_INPUT))
 			tmem_dev->flags &= ~ TCTRL_GENERATE_BIT;
 
 		ret = 0;
@@ -350,13 +354,18 @@ long tmem_chrdev_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 
 	case TMEM_GENERATE_SIZE:
 		inc_tmem_generate();	
+
+		usrgensize = (__user size_t *) arg;
+		ret = get_user(gensize, usrgensize);
+		if (ret)
+			goto ioctl_out;
 		
-		if (arg < 0) {
+		if (gensize < 0) {
 			ret = -EINVAL;
 			goto ioctl_out;
 		}
 
-		tmem_dev->generated_size = (size_t) arg;
+		tmem_dev->generated_size = (size_t) gensize;
 			
 		ret = 0;
 		goto ioctl_out;
@@ -392,7 +401,6 @@ static int __init init_func(void)
 {
 	int ret = 0;
 	struct dentry *root; 
-	void *buffer = NULL;
 
 	pr_err("IOCTL Numbers for get, put, invalidate, control: %lu %lu %lu %lu\n",
 		TMEM_GET, TMEM_PUT, TMEM_INVAL, TMEM_CONTROL);
@@ -403,13 +411,12 @@ static int __init init_func(void)
 		return -ENOMEM;
 	}
 
-	buffer = kmalloc(TMEM_MAX, GFP_KERNEL);
-	if (!buffer) {
+	tmem_dev->buf = kmalloc(TMEM_MAX, GFP_KERNEL);
+	if (!tmem_dev->buf) {
 		kfree(tmem_dev);
 		return -ENOMEM;
 	}
 
-	tmem_dev->buf = buffer;
 	tmem_dev->flags = 0x00000000;
 	tmem_dev->generated_size = 0;
 
@@ -434,7 +441,8 @@ static int __init init_func(void)
 	debugfs_create_u64("hcall_puts", S_IRUGO, root, &hcall_put_counter);
 	debugfs_create_u64("hcall_gets", S_IRUGO, root, &hcall_get_counter);
 	debugfs_create_u64("hcall_invalidates", S_IRUGO, root, &hcall_invalidate_counter);
-	debugfs_create_u64("flags", S_IRUGO, root, &tmem_dev->flags);
+	debugfs_create_x64("flags", S_IRUGO, root, &tmem_dev->flags);
+	debugfs_create_u64("gensize", S_IRUGO, root, &tmem_dev->generated_size);
 
 #endif /* CONFIG_DEBUG_FS */
 

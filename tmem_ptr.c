@@ -27,7 +27,7 @@ DEFINE_HASHTABLE(used_pages, 10);
 
 #define TMEM_POOL_ID (0) 
 #define TMEM_OBJ_ID (0) 
-#define TMEM_POOL_SIZE (1024 * 1024 * 64) 
+#define TMEM_POOL_SIZE (1024 * 1024 * 1024) 
 
 int tmem_ptr_put_page(void *key, size_t key_len, void *value, size_t value_len)
 {

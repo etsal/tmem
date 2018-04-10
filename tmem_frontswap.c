@@ -61,13 +61,14 @@ static struct frontswap_ops tmem_frontswap_ops = {
 
 static int __init tmem_init(void)
 {
+	key = kmalloc(sizeof(*key), GFP_KERNEL);
+	if (!key)
+		return -ENOMEM;
+
 	frontswap_writethrough(false);
 	frontswap_register_ops(&tmem_frontswap_ops);
 	pr_debug("registration successful");
 
-	key = kmalloc(sizeof(*key), GFP_KERNEL);
-	if (!key)
-		return -ENOMEM;
 
 	return 0;
 }
